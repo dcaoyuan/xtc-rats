@@ -1,0 +1,20 @@
+#! /bin/sh
+# genparser
+# Generate the parser for the syntax definition file format. Ideally, we would
+# use sbt-rats itself, but we code the generation and massaging here to avoid
+# having to implement a boot-strapping process.
+
+java -cp $HOME/.ivy2/cache/xtc/rats/jars/rats-2.3.1.jar xtc.parser.Rats Parser.rats
+
+sed -E -i .orig \
+ \
+    -e 's/Pair\.empty\(\)/List.empty()/' \
+    -e 's/new Pair[^(]+\(([^,)]+)\)/Nil$.MODULE$.$colon$colon(\1)/' \
+    -e 's/new Pair([^(]+)/new $colon$colon\1/' \
+    -e 's/Pair<Pair([^(]+)>/List<List\1>/' \
+    -e 's/Pair([^(;]+)/List\1/' \
+ \
+    -e '/import xtc\.tree\.Locatable;/d' \
+    -e 's/Locatable/Object/' \
+ \
+    Parser.java

@@ -1,0 +1,22 @@
+DESCRIPTION
+-----------
+
+Tools to extract the set of compilation units from the Linux kernel
+build system.
+
+check_dep is a program that extract configuration variables from the
+Kconfig files.  Contains .c and .h files pulled from
+linux-3.7/scripts/kconfig.
+
+Makefile.kcu overrides the top-level Makefile from the Linux kernel
+build system.
+
+bashast.g is from
+http://git.overlays.gentoo.org/gitweb/?p=proj/libbash.git
+
+USAGE
+-----
+
+Run "make" to build.
+
+Run "check_dep -h" to see options.

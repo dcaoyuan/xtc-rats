@@ -1,0 +1,19 @@
+\BOOKMARK [1][-]{section.1}{Usage}{}% 1
+\BOOKMARK [2][-]{subsection.1.1}{Environment}{section.1}% 2
+\BOOKMARK [2][-]{subsection.1.2}{Executables}{section.1}% 3
+\BOOKMARK [2][-]{subsection.1.3}{Core Scripts}{section.1}% 4
+\BOOKMARK [1][-]{section.2}{Instrumentation}{}% 5
+\BOOKMARK [2][-]{subsection.2.1}{The -preprocessorStatistics Flag}{section.2}% 6
+\BOOKMARK [2][-]{subsection.2.2}{The -parserStatistics Flag}{section.2}% 7
+\BOOKMARK [2][-]{subsection.2.3}{The -languageStatistics Flag}{section.2}% 8
+\BOOKMARK [3][-]{subsubsection.2.3.1}{Patching the Parser to Report Embedded Conditionals}{subsection.2.3}% 9
+\BOOKMARK [2][-]{subsection.2.4}{Other SuperC Flags}{section.2}% 10
+\BOOKMARK [3][-]{subsubsection.2.4.1}{-configurationVariables}{subsection.2.4}% 11
+\BOOKMARK [3][-]{subsubsection.2.4.2}{-headGuards}{subsection.2.4}% 12
+\BOOKMARK [3][-]{subsubsection.2.4.3}{-size}{subsection.2.4}% 13
+\BOOKMARK [3][-]{subsubsection.2.4.4}{-time}{subsection.2.4}% 14
+\BOOKMARK [3][-]{subsubsection.2.4.5}{-killswitch}{subsection.2.4}% 15
+\BOOKMARK [2][-]{subsection.2.5}{The superc\137linux.sh Script}{section.2}% 16
+\BOOKMARK [2][-]{subsection.2.6}{The typechef\137test.sh Script}{section.2}% 17
+\BOOKMARK [2][-]{subsection.2.7}{The dynamic\137analysis.sh Script}{section.2}% 18
+\BOOKMARK [1][-]{section.3}{Implementing a New Language}{}% 19

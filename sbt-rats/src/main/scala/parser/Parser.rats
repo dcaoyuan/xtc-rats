@@ -1,0 +1,491 @@
+/*
+ * This file is part of the sbt-rats plugin.
+ * Copyright (c) 2012-2014 Anthony M Sloane, Macquarie University.
+ * All rights reserved.
+ * Distributed under the New BSD license.
+ * See file LICENSE at top of distribution.
+ */
+
+module parser.Parser;
+
+header {
+    import ast.*;
+    import ast.SList.*;
+    import org.kiama.output.LeftAssoc$;
+    import org.kiama.output.NonAssoc$;
+    import org.kiama.output.RightAssoc$;
+    import org.kiama.util.Positions;
+    import scala.collection.immutable.List;
+    import scala.collection.immutable.Nil$;
+    import scala.collection.immutable.$colon$colon;
+    import xtc.util.Action;
+}
+
+body {
+    static {
+        add (KEYWORDS, new String[] {
+            "body", "defaultIndent", "defaultWidth", "header", "left", "line",
+            "module", "nest", "none", "option", "paren", "rats", "right", "setOfString",
+            "sp", "String", "Token", "verbose", "Void"
+        });
+    }
+
+    /** Set position of an Object using Kiama's Positions module */
+    void setLocation(final Object object, final int start) {
+        if (null != object) {
+            Column s = column (start);
+            Positions.setStart (object, new LineColPosition (this, start, s.line, s.column));
+            int finish = yyCount == 0 ? 0 : yyCount - 1;
+            Column f = column (finish);
+            Positions.setFinish (object, new LineColPosition (this, finish, f.line, f.column));
+        }
+    }
+
+    /** Apply a Scala list of actions */
+    <T> T apply (List<Action<T>> actions, T seed) {
+        while (! actions.isEmpty()) {
+            seed    = actions.head().run(seed);
+            actions = actions.drop(1);
+        }
+        return seed;
+    }
+
+}
+
+option setOfString (KEYWORDS), withLocation;
+
+public Grammar Grammar =
+    Spacing m:ModuleDecl h:HeaderSection? b:BodySection? o:Options? rs:Rule* EOF {
+        yyValue = new Grammar (m, h, b, o, rs);
+    };
+
+// Module declarations
+
+Pair<String> ModuleDecl =
+    void:"module":Word QualIdentifier void:";":Symbol;
+
+// Header section
+
+String HeaderSection =
+    void:"header":Word CodeBlock;
+
+// Body section
+
+String BodySection =
+    void:"body":Word CodeBlock;
+
+// Code blocks
+
+String CodeBlock =
+    '{' yyValue:CodeBlockText '}' Spacing;
+
+String CodeBlockText =
+    ('{' CodeBlockText '}' / !'}' _)*;
+
+// Options
+
+Pair<SyntaxOption> Options =
+    void:"option":Word h:Option tl:(void:",":Symbol Option)* void:";":Symbol {
+        yyValue = SList.create (h, tl);
+    };
+
+SyntaxOption Option =
+    void:"defaultIndent":Word void:"(":Symbol d:DecDigits void:")":Symbol {
+        yyValue = new Indentation (Integer.parseInt (d));
+    } /
+    void:"defaultWidth":Word void:"(":Symbol d:DecDigits void:")":Symbol {
+        yyValue = new Width (Integer.parseInt (d));
+    } /
+    void:"setOfString":Word void:"(":Symbol n:Word void:")":Symbol {
+        yyValue = new SetOfString (n);
+    } /
+    void:"verbose":Word {
+        yyValue = new Verbose ();
+    };
+
+// Rules
+
+Rule Rule =
+      GrammarRule void:".":Symbol
+    / RatsSection;
+
+// Grammar rules
+
+Rule GrammarRule =
+    i:IdnDef void:":":Symbol t:StringRuleType void:"=":Symbol alts:StringAlternatives {
+        yyValue = new StringRule (i, t, alts);
+    } /
+    i:IdnDef t:Type? anns:RuleAnnotations? void:"=":Symbol alts:ASTAlternatives {
+        yyValue = new ASTRule (i, t, alts, false, anns);
+    };
+
+// Types
+
+IdnUse StringRuleType =
+    StringType /
+    TokenType /
+    VoidType;
+
+IdnUse StringType =
+    void:"String":Word {
+        yyValue = new IdnUse ("String");
+    };
+
+IdnUse TokenType =
+    void:"Token":Word {
+        yyValue = new IdnUse ("Token");
+    };
+
+IdnUse VoidType =
+    void:"Void":Word {
+        yyValue = new IdnUse ("Void");
+    };
+
+IdnUse Type =
+    void:":":Symbol IdnUse;
+
+// Alternatives
+
+Pair<Element> StringAlternatives =
+    h:Element tl:(void:"|":Symbol Element)* {
+        yyValue = SList.create (h, tl);
+    };
+
+Pair<Alternative> ASTAlternatives =
+    h:ASTAlternative tl:(void:"|":Symbol ASTAlternative)* {
+        yyValue = SList.create (h, tl);
+    };
+
+Alternative ASTAlternative =
+    es:ASTElement* as:AltAnnotations? {
+        yyValue = new Alternative (es, as, new DefaultAction ());
+    };
+
+// Elements
+
+Element Element =
+    seed:Element1 actions:AltTail+ {
+        yyValue = apply (actions, seed);
+    } /
+    Element1;
+
+constant Action<Element> AltTail =
+    void:"/":Symbol right:Element {
+        yyValue = new Action<Element> () {
+            public Element run (Element left) {
+                return new Alt (left, right);
+            }
+        };
+    };
+
+Element Element1 =
+    seed:Element2 actions:SeqnTail+ {
+        yyValue = apply (actions, seed);
+    } /
+    Element2;
+
+constant Action<Element> SeqnTail =
+    right:Element2 {
+        yyValue = new Action<Element> () {
+            public Element run (Element left) {
+                return new Seqn (left, right);
+            }
+        };
+    };
+
+Element Element2 =
+    e1:Primary void:"**":Symbol e2:Primary {
+        yyValue = new Rep (true, e1, e2);
+    } /
+    e1:Primary void:"++":Symbol e2:Primary {
+        yyValue = new Rep (false, e1, e2);
+    } /
+    e:Primary void:"*":Symbol {
+        yyValue = new Rep (true, e, new Epsilon ());
+    } /
+    e:Primary void:"+":Symbol {
+        yyValue = new Rep (false, e, new Epsilon ());
+    } /
+    e:Primary void:"?":Symbol {
+        yyValue = new Opt (e);
+    } /
+    Primary;
+
+Element Primary =
+    void:"(":Symbol Element void:")":Symbol /
+    void:"!":Symbol p:Primary {
+        yyValue = new Not (p);
+    } /
+    Literal Spacing /
+    i:IdnUse {
+        yyValue = new NonTerminal (new NTName (i));
+    };
+
+// AST elements
+
+Element ASTElement =
+    Formatting /
+    ASTFactor;
+
+Element ASTFactor =
+    e1:ASTPrimary void:"**":Symbol e2:ASTPrimary {
+        yyValue = new Rep (true, e1, e2);
+    } /
+    e1:ASTPrimary void:"++":Symbol e2:ASTPrimary {
+        yyValue = new Rep (false, e1, e2);
+    } /
+    e:ASTPrimary void:"*":Symbol {
+        yyValue = new Rep (true, e, new Epsilon ());
+    } /
+    e:ASTPrimary void:"+":Symbol {
+        yyValue = new Rep (false, e, new Epsilon ());
+    } /
+    e:ASTPrimary void:"?":Symbol {
+        yyValue = new Opt (e);
+    } /
+    ASTPrimary;
+
+Element ASTPrimary =
+    void:"(":Symbol ASTAtMostOneNonterm void:")":Symbol /
+    ASTLiteral /
+    ASTNonterm;
+
+Element ASTNonterm =
+    i:Identifier void:"[":Symbol d:DecDigits void:"]":Symbol {
+        yyValue = new Block (i, Integer.parseInt (d));
+    } /
+    i:IdnUse {
+        yyValue = new NonTerminal (new NTName (i));
+    };
+
+Element ASTAtMostOneNonterm =
+    i:ASTNonterm ls:ASTLiterals {
+        yyValue = new Seqn (i, ls);
+    } /
+    l:ASTLiteral es:ASTAtMostOneNonterm {
+        yyValue = new Seqn (l, es);
+    } /
+    ASTLiteral /
+    ASTNonterm;
+
+Element ASTLiterals =
+    seed:ASTLiteral actions:ASTLiteralsTail+ {
+        yyValue = apply (actions, seed);
+    } /
+    ASTLiteral;
+
+constant Action<Element> ASTLiteralsTail =
+    right:ASTLiteral {
+        yyValue = new Action<Element> () {
+            public Element run (Element left) {
+                return new Seqn (left, right);
+            }
+        };
+    };
+
+Element ASTLiteral =
+    Literal Spacing;
+
+// Formatting
+
+Element Formatting =
+    void:"\\n":Symbol {
+        yyValue = new Newline ();
+      }
+    / void:"nest":Word void:"(":Symbol e:ASTFactor void:")":Symbol {
+        yyValue = new Nest (e, false);
+    }
+    / void:"nestnl":Word void:"(":Symbol e:ASTFactor void:")":Symbol {
+        yyValue = new Nest (e, true);
+    }
+    / void:"sp":Word {
+        yyValue = new Space ();
+    };
+
+// Rule annotations
+
+Pair<RuleAnnotation> RuleAnnotations =
+    void:"{":Symbol RuleAnnotationList void:"}":Symbol;
+
+Pair<RuleAnnotation> RuleAnnotationList =
+    h:RuleAnnotation tl:(void:",":Symbol RuleAnnotation)* {
+        yyValue = SList.create (h, tl);
+    };
+
+RuleAnnotation RuleAnnotation =
+    void:"line":Word {
+        yyValue = new Line ();
+    } /
+    void:"nested":Word {
+        yyValue = new Nested ();
+    } /
+    void:"paren":Word {
+        yyValue = new Parenthesized ();
+    } /
+    void:"nospacing":Word {
+        yyValue = new NoSpacing ();
+    };
+
+// Alternative annotations
+
+Pair<AltAnnotation> AltAnnotations =
+    void:"{":Symbol AltAnnotationList void:"}":Symbol;
+
+Pair<AltAnnotation> AltAnnotationList =
+    h:AltAnnotation tl:(void:",":Symbol AltAnnotation)* {
+        yyValue = SList.create (h, tl);
+    };
+
+AltAnnotation AltAnnotation =
+    void:"left":Word {
+        yyValue = new Associativity (LeftAssoc$.MODULE$);
+    } /
+    void:"none":Word {
+        yyValue = new Associativity (NonAssoc$.MODULE$);
+    } /
+    void:"right":Word {
+        yyValue = new Associativity (RightAssoc$.MODULE$);
+    } /
+    i:IdnDef {
+        yyValue = new Constructor (i);
+    } /
+    d:DecDigits void:":":Symbol m:QualIdentifier void:":":Symbol t:QualIdentifier {
+        yyValue = new Transformation (Integer.parseInt (d), m, t);
+    } /
+    d:DecDigits {
+        yyValue = new Precedence (Integer.parseInt (d));
+    };
+
+String DecDigits =
+    [0-9]+;
+
+// Rats! sections
+
+Rule RatsSection =
+      RatsRule void:".":Symbol
+    / RatsBlock;
+
+// Rats! rule
+
+RatsRule RatsRule =
+    i:IdnDef void:":":Symbol StringType void:"=":Symbol void:"rats":Word s:CodeBlock {
+        yyValue = new RatsRule (i, new IdnUse ("String"), s);
+    } /
+    i:IdnDef t:Type void:"=":Symbol void:"rats":Word s:CodeBlock {
+        yyValue = new RatsRule (i, t, s);
+    } /
+    i:IdnDef void:"=":Symbol void:"rats":Word s:CodeBlock {
+        yyValue = new RatsRule (i, null, s);
+    };
+
+// Rats! block
+
+RatsBlock RatsBlock =
+    void:"rats":Word s:CodeBlock {
+        yyValue = new RatsBlock (s);
+    };
+
+// Identifiers
+
+IdnUse IdnUse =
+    i:Identifier {
+        yyValue = new IdnUse (i);
+    };
+
+IdnDef IdnDef =
+    i:Identifier {
+        yyValue = new IdnDef (i);
+    };
+
+Pair<String> QualIdentifier =
+    h:Identifier tl:(void:".":Symbol Identifier)* {
+        yyValue = SList.create (h, tl);
+    };
+
+String Identifier =
+    yyValue:Word &{
+        ! contains (KEYWORDS, yyValue)
+    };
+
+// Literals
+
+Element Literal =
+    '_' {
+        yyValue = new Wildcard ();
+    } /
+    ["] s:StringLiteral ["] {
+        yyValue = new StringLit (s);
+    } /
+    ['] s:CharLiteral ['] {
+        yyValue = new CharLit (s);
+    } /
+    '[' s:CharClassContents ']' {
+        yyValue = new CharClass (s);
+    };
+
+String StringLiteral =
+    (Escape / !["] _)*;
+
+String CharLiteral =
+    (Escape / !['] _)*;
+
+String CharClassContents =
+    CharClassElement*;
+
+String CharClassElement =
+    CharClassCharacter '-' CharClassCharacter /
+    CharClassCharacter;
+
+String CharClassCharacter =
+    Escape /
+    ![\-\]\\] _;
+
+String Escape =
+    '\\' [btnfr"'\[\\\]\-] /
+    '\\' 'u' HexQuad /
+    OctalEscape;
+
+String HexQuad =
+    HexDigit HexDigit HexDigit HexDigit;
+
+String HexDigit =
+    [0-9a-fA-F];
+
+String OctalEscape =
+    '\\' ([0-3] OctDigit OctDigit / OctDigit OctDigit / OctDigit);
+
+String OctDigit =
+    [0-7];
+
+String DecDigit =
+    [0-9];
+
+// Words
+
+String Word =
+    WordCharacters Spacing;
+
+transient String WordCharacters =
+    h:_ &{
+        Character.isJavaIdentifierStart (h)
+    } (t:_ &{
+        Character.isJavaIdentifierPart (t)
+    })*;
+
+// Syntax symbols
+
+String Symbol =
+    SymbolCharacters Spacing;
+
+transient String SymbolCharacters =
+    "**" / "++" /
+    ":" / "=" / "/" / "|" / "{" / "}" / "(" / ")" / "!" / "." / "," /
+    "*" / "+" / "?" / "[" / "]" / ";" / "\\n";
+
+transient void Spacing   = (Space / SLComment / MLComment)*;
+transient void FSpacing  = (Space / SLComment / MLComment)+;
+transient void Space     = ' ' / '\t' / '\f' / EOL;
+transient void SLComment = "//" (![\n\r] _)* EOL;
+transient void MLComment = "/*" (MLComment / !"*/" _)* "*/";
+transient void EOL       = '\r' '\n' / '\r' / '\n';
+transient void EOF       = !_;
